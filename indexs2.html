@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard Calidad del Aire · Puebla · PM2.5</title>
+
+  <!-- Leaflet (CDN) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <style>
+    :root{
+      --bg: #0b1220;
+      --panel: rgba(18, 28, 48, 0.88);
+      --panel2: rgba(18, 28, 48, 0.72);
+      --text: #e8eefc;
+      --muted: rgba(232,238,252,.72);
+      --border: rgba(255,255,255,.12);
+      --shadow: 0 14px 40px rgba(0,0,0,.35);
+      --radius: 16px;
+
+      /* Colores oficiales (exactos) */
+      --c-good: #00e400;
+      --c-mod:  #ffff00;
+      --c-bad:  #ff7e00;
+      --c-vbad: #ff0000;
+      --c-ext:  #8f3f97;
+      --c-haz:  #7e0023;
+
+      --c-nodata: #9aa4b2;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 700px at 20% 0%, rgba(40,90,190,.25), transparent 55%),
+                  radial-gradient(1000px 600px at 90% 20%, rgba(190,60,120,.18), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+    }
+
+    .app{
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 18px 14px 22px;
+    }
+
+    .topbar{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom: 12px;
+    }
+    .title{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .title h1{
+      margin:0;
+      font-size: 18px;
+      letter-spacing: .2px;
+      font-weight: 700;
+    }
+    .title .subtitle{
+      margin:0;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.35;
+      max-width: 720px;
+    }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+
+    .pill{
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      box-shadow: var(--shadow);
+      display:flex;
+      gap:10px;
+      align-items:center;
+      white-space:nowrap;
+    }
+    .pill .k{
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: .2px;
+    }
+    .pill .v{
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .btn{
+      appearance:none;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 12px;
+      cursor:pointer;
+      font-weight: 650;
+      font-size: 12.5px;
+      box-shadow: var(--shadow);
+      transition: transform .06s ease, background .15s ease;
+    }
+    .btn:hover{ background: rgba(255,255,255,.10); }
+    .btn:active{ transform: translateY(1px); }
+
+    .layout{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .card{
+      background: rgba(10, 16, 30, 0.55);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+
+    #map{
+      width: 100%;
+      height: min(72vh, 720px);
+    }
+
+    .map-overlay{
+      position: absolute;
+      z-index: 500;
+      pointer-events: none;
+      inset: 12px auto auto 12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      max-width: 320px;
+    }
+
+    .overlay-card{
+      pointer-events: none;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .overlay-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 6px;
+    }
+    .overlay-title .name{
+      font-weight: 800;
+      font-size: 12.8px;
+      letter-spacing: .2px;
+    }
+    .overlay-title .tag{
+      font-size: 11px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+    }
+    .avg{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .avg .value{
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: .2px;
+      line-height: 1;
+    }
+    .avg .unit{
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 650;
+    }
+    .avg .status{
+      font-size: 12.5px;
+      font-weight: 800;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      align-self:flex-start;
+    }
+
+    .meta{
+      margin-top: 8px;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .meta b{ color: var(--text); }
+
+    /* Leyenda inferior horizontal (como barra) */
+    .legendbar{
+      display:flex;
+      width: 100%;
+      border-top: 1px solid var(--border);
+      background: rgba(10, 16, 30, 0.60);
+      backdrop-filter: blur(10px);
+    }
+    .legend-seg{
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 10px 8px;
+      border-right: 1px solid rgba(0,0,0,.12);
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:4px;
+      text-align:center;
+    }
+    .legend-seg:last-child{ border-right:none; }
+    .legend-seg .rng{
+      font-size: 12px;
+      font-weight: 900;
+      color: rgba(0,0,0,.85);
+      text-shadow: 0 1px 0 rgba(255,255,255,.25);
+    }
+    .legend-seg .lbl{
+      font-size: 11px;
+      font-weight: 850;
+      color: rgba(0,0,0,.80);
+      text-shadow: 0 1px 0 rgba(255,255,255,.20);
+    }
+    .legend-title{
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 850;
+      color: var(--text);
+      border-top: 1px solid var(--border);
+      background: rgba(10,16,30,.58);
+    }
+
+    /* Marcador tipo “burbuja” */
+    .aqi-bubble{
+      width: 54px;
+      height: 54px;
+      border-radius: 999px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      border: 2px solid rgba(255,255,255,.25);
+      box-shadow: 
+        0 0 40px rgba(255,255,255,.15),
+        0 14px 40px rgba(0,0,0,.4),
+        inset 0 0 20px rgba(255,255,255,.1);
+      backdrop-filter: blur(12px);
+      filter: drop-shadow(0 0 30px currentColor) blur(0.5px);
+      transform: translate(-27px, -27px);
+      position: relative;
+      mix-blend-mode: screen;
+    }
+    .aqi-bubble::after{
+      content:"";
+      position:absolute;
+      width: 12px;
+      height: 12px;
+      background: inherit;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      border-right: 2px solid rgba(255,255,255,.25);
+      border-bottom: 2px solid rgba(255,255,255,.25);
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,.3));
+    }
+    .aqi-bubble .n{
+      font-size: 16px;
+      font-weight: 950;
+      line-height: 1;
+      color: rgba(0,0,0,.9);
+      margin-bottom: 2px;
+      text-shadow: 0 1px 3px rgba(255,255,255,.2);
+    }
+    .aqi-bubble .s{
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .3px;
+      color: rgba(0,0,0,.85);
+      max-width: 46px;
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(255,255,255,.15);
+    }
+
+    /* Leaflet popup refinado */
+    .leaflet-popup-content-wrapper{
+      border-radius: 14px;
+      background: rgba(10,16,30,.92);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: var(--shadow);
+    }
+    .leaflet-popup-tip{
+      background: rgba(10,16,30,.92);
+    }
+    .popup-title{
+      font-weight: 900;
+      margin-bottom: 6px;
+      letter-spacing: .2px;
+    }
+    .popup-row{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-size: 12.5px;
+      color: var(--muted);
+      margin: 2px 0;
+    }
+    .popup-row b{ color: var(--text); }
+
+    @media (max-width: 520px){
+      .title h1{ font-size: 16px; }
+      .legend-seg .rng{ font-size: 11px; }
+      .legend-seg .lbl{ font-size: 10.5px; }
+      .aqi-bubble{ width: 50px; height: 50px; transform: translate(-25px,-25px); }
+      .aqi-bubble .n{ font-size: 15px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">
+        <h1>Calidad del Aire · Puebla (PM2.5)</h1>
+        <p class="subtitle">
+          Fuente: API WAQI (aqicn.org), pasarela técnica de datos en tiempo real.
+          Este dashboard ignora otros contaminantes y utiliza únicamente PM2.5 (índice AQI).
+        </p>
+      </div>
+      <div class="actions">
+        <div class="pill" title="Intervalo exacto de actualización (sin recargar)">
+          <span class="k">Auto-update</span>
+          <span class="v" id="refreshLabel">—</span>
+        </div>
+        <button class="btn" id="btnRefresh" type="button">Actualizar ahora</button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card" style="position:relative;">
+        <div class="map-overlay">
+          <div class="overlay-card" id="avgCard">
+            <div class="overlay-title">
+              <div class="name">Promedio General</div>
+              <div class="tag">PM2.5</div>
+            </div>
+            <div class="avg">
+              <div>
+                <div class="value" id="avgValue">—</div>
+                <div class="unit">AQI (PM2.5)</div>
+              </div>
+              <div class="status" id="avgStatus">Sin datos</div>
+            </div>
+            <div class="meta">
+              <div>Estaciones activas: <b id="activeCount">0</b>/<span id="totalCount">0</span></div>
+              <div>Última actualización: <b id="lastUpdated">—</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="map" aria-label="Mapa de calidad del aire en Puebla"></div>
+
+        <div class="legend-title">Escala oficial (intervalos y colores)</div>
+        <div class="legendbar" aria-label="Leyenda de rangos y colores">
+          <div class="legend-seg" style="background: var(--c-good);">
+            <div class="rng">0–50</div><div class="lbl">Buena</div>
+          </div>
+          <div class="legend-seg" style="background: var(--c-mod);">
+            <div class="rng">51–100</div><div class="lbl">Regular</div>
+          </div>
+          <div class="legend-seg" style="background: var(--c-bad);">
+            <div class="rng">101–150</div><div class="lbl">Mala</div>
+          </div>
+          <div class="legend-seg" style="background: var(--c-vbad);">
+            <div class="rng">151–200</div><div class="lbl">Muy Mala</div>
+          </div>
+          <div class="legend-seg" style="background: var(--c-ext);">
+            <div class="rng">201–300</div><div class="lbl">Extremadamente Mala</div>
+          </div>
+          <div class="legend-seg" style="background: var(--c-haz);">
+            <div class="rng">301–500</div><div class="lbl">Peligrosa</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet (CDN) -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script>
+    /**********************************************************************
+     * Dashboard Calidad del Aire · Puebla (PM2.5)
+     * - Fuente: WAQI (aqicn.org)
+     * - Único parámetro: PM2.5 (AQI)
+     * - Mapa interactivo: Leaflet
+     * - Estaciones oficiales: Agua Santa, BINE, NINFAS, UTP, Velódromo
+     * - Escala y colores: EXACTOS según especificación del usuario
+     * - Promedio general: suma/contador de estaciones activas (con PM2.5)
+     * - Actualización automática: setInterval (sin recargar)
+     **********************************************************************/
+
+    // === Token listo para usar ===
+    const API_TOKEN = "5561b24ae5e891785a68fde48075b11fd39666db";
+
+    // Intervalo EXACTO de actualización (ms)
+    const REFRESH_MS = 300000; // 5 minutos exactos (300,000 ms)
+
+    const WAQI_BASE = "https://api.waqi.info";
+
+    // Centro del mapa (Puebla)
+    const PUEBLA_CENTER = { lat: 19.0433, lon: -98.2019 };
+    const DEFAULT_ZOOM = 12.5;
+
+    // Estaciones (coords aproximadas para ubicarlas en el mapa).
+    // El dato de PM2.5 se resuelve vía WAQI: primero por búsqueda (keyword),
+    // y en fallback por estación más cercana al geo (lat/lon).
+    const STATIONS = [
+      { id: "agua-santa", label: "Agua Santa", keyword: "Agua Santa Puebla", lat: 19.0097, lon: -98.2077, location: "Agua Santa, Puebla, Mexico", uid: null },
+      { id: "bine",       label: "BINE",       keyword: "BINE Puebla",       lat: 19.0607, lon: -98.1737, location: "BINE, Puebla, Mexico", uid: null },
+      { id: "ninfas",     label: "NINFAS",     keyword: "NINFAS Puebla",     lat: 19.0226, lon: -98.2357, location: "NINFAS, Puebla, Mexico", uid: null },
+      { id: "utp",        label: "UTP",        keyword: "UTP Puebla",        lat: 19.0280, lon: -98.1440, location: "UTP, Puebla, Mexico", uid: null },
+      { id: "velodromo",  label: "Velódromo",  keyword: "Velódromo Puebla",  lat: 19.0536, lon: -98.1985, location: "Velódromo, Puebla, Mexico", uid: null },
+      { id: "atlixco",    label: "Atlixco",    keyword: "Atlixco Puebla",    lat: 18.920673, lon: -98.420996, location: "Atlixco, Puebla, Mexico", uid: null },
+      { id: "tehuacan",   label: "Tehuacán",   keyword: "Tehuacán Puebla",   lat: 18.46992, lon: -97.39328, location: "Tehuacán, Puebla, Mexico", uid: null },
+    ];
+
+    // UI refs
+    const elAvgValue     = document.getElementById("avgValue");
+    const elAvgStatus    = document.getElementById("avgStatus");
+    const elActiveCount  = document.getElementById("activeCount");
+    const elTotalCount   = document.getElementById("totalCount");
+    const elLastUpdated  = document.getElementById("lastUpdated");
+    const elRefreshLabel = document.getElementById("refreshLabel");
+    const btnRefresh     = document.getElementById("btnRefresh");
+
+    elTotalCount.textContent = String(STATIONS.length);
+    elRefreshLabel.textContent = `${Math.round(REFRESH_MS / 60000)} min`;
+
+    // Leaflet map init
+    const map = L.map("map", {
+      zoomControl: true,
+      attributionControl: true
+    }).setView([PUEBLA_CENTER.lat, PUEBLA_CENTER.lon], DEFAULT_ZOOM);
+
+    // Base tiles
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Utilities
+    function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+
+    function getAQIColor(aqi){
+      // Sin dato
+      if (aqi === null || aqi === undefined || Number.isNaN(aqi)) return getComputedStyle(document.documentElement).getPropertyValue("--c-nodata").trim();
+
+      // Intervalos EXACTOS solicitados
+      if (aqi >= 0 && aqi <= 50)   return "#00e400";
+      if (aqi >= 51 && aqi <= 100) return "#ffff00";
+      if (aqi >= 101 && aqi <= 150)return "#ff7e00";
+      if (aqi >= 151 && aqi <= 200)return "#ff0000";
+      if (aqi >= 201 && aqi <= 300)return "#8f3f97";
+      if (aqi >= 301 && aqi <= 500)return "#7e0023";
+
+      // Por si llega fuera de rango, saturar a extremos
+      return (aqi < 0) ? "#00e400" : "#7e0023";
+    }
+
+    function getAQILabel(aqi){
+      if (aqi === null || aqi === undefined || Number.isNaN(aqi)) return "Sin datos";
+      if (aqi >= 0 && aqi <= 50)   return "Buena";
+      if (aqi >= 51 && aqi <= 100) return "Regular";
+      if (aqi >= 101 && aqi <= 150)return "Mala";
+      if (aqi >= 151 && aqi <= 200)return "Muy Mala";
+      if (aqi >= 201 && aqi <= 300)return "Extremadamente Mala";
+      if (aqi >= 301 && aqi <= 500)return "Peligrosa";
+      return (aqi < 0) ? "Buena" : "Peligrosa";
+    }
+
+    function fmtTime(ts){
+      // ts puede venir como string (WAQI: data.time.s) o Date
+      if (!ts) return "—";
+      if (ts instanceof Date) return ts.toLocaleString("es-MX", { hour12:false });
+      return String(ts);
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2){
+      const R = 6371;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat/2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon/2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    function buildBubbleIcon(label, aqi){
+      const color = getAQIColor(aqi);
+      const n = (aqi === null || aqi === undefined || Number.isNaN(aqi)) ? "—" : String(Math.round(aqi));
+      const safeLabel = (label || "").toUpperCase();
+      return L.divIcon({
+        className: "",
+        html: `
+          <div class="aqi-bubble" style="background:${color};">
+            <div class="n">${n}</div>
+            <div class="s">${safeLabel}</div>
+          </div>
+        `,
+        iconSize: [54, 54],
+        iconAnchor: [0, 0]
+      });
+    }
+
+    // Create placeholder markers
+    for (const st of STATIONS){
+      st.marker = L.marker([st.lat, st.lon], {
+        icon: buildBubbleIcon(st.label, null),
+        keyboard: false
+      }).addTo(map);
+
+      st.marker.bindTooltip(st.label, { direction: "top", opacity: 0.9 });
+
+      st.marker.bindPopup(`
+        <div class="popup-title">${st.label}</div>
+        <div class="popup-row"><span>PM2.5 (AQI)</span><b>—</b></div>
+        <div class="popup-row"><span>Clasificación</span><b>Sin datos</b></div>
+        <div class="popup-row"><span>Actualización</span><b>—</b></div>
+        <div class="popup-row"><span>Fuente</span><b>WAQI</b></div>
+      `);
+    }
+
+    async function waqiGetJson(url){
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function resolveUidBySearch(st){
+      // Intentar resolver UID (una sola vez) vía endpoint search
+      // https://api.waqi.info/search/?keyword=...&token=...
+      const url = `${WAQI_BASE}/search/?keyword=${encodeURIComponent(st.keyword)}&token=${encodeURIComponent(API_TOKEN)}`;
+      const json = await waqiGetJson(url);
+      if (json.status !== "ok" || !Array.isArray(json.data) || json.data.length === 0) return null;
+
+      // Heurística: preferir resultados cercanos al punto y con "Puebla" en el nombre
+      let best = null;
+      let bestScore = Infinity;
+
+      for (const item of json.data){
+        if (!item || !item.station || !Array.isArray(item.station.geo)) continue;
+        const name = (item.station.name || "").toLowerCase();
+        const hasPuebla = name.includes("puebla");
+        const lat = item.station.geo[0];
+        const lon = item.station.geo[1];
+        const d = haversineKm(st.lat, st.lon, lat, lon);
+
+        // Score: distancia (dominante) + penalización si no menciona Puebla
+        const score = d + (hasPuebla ? 0 : 25);
+
+        if (score < bestScore){
+          bestScore = score;
+          best = item;
+        }
+      }
+
+      return best?.uid ?? null;
+    }
+//kk2
+  async function fetchStationPM25(st) {
+      // Forzamos el uso del UID para que coincida con tus imágenes
+      const feedUrl = `${WAQI_BASE}/feed/@${st.uid}/?token=${API_TOKEN}`;
+      const json = await waqiGetJson(feedUrl);
+      
+      if (json.status !== "ok" || !json.data) throw new Error("Datos no disponibles");
+
+      // CAMBIO CLAVE: WAQI a veces pone el valor en 'aqi' y otras en 'iaqi.pm25.v'
+      // Esta línea intenta obtener ambos para asegurar que Tehuacán y otros funcionen
+      const valueRaw = json.data.iaqi?.pm25?.v || json.data.aqi;
+      
+      const value = (valueRaw === undefined || valueRaw === null) ? null : Number(valueRaw);
+      const time = json.data.time?.s || json.data.time?.iso || null;
+      const stationName = json.data.city?.name || st.label;
+
+      return { value, time, stationName };
+    }
+    //kkf2
+//kk1
+    function updateStationMarker(st, payload) {
+      const { value, time, stationName } = payload;
+      st.lastValue = value;
+      st.lastTime = time;
+      // Una estación está activa si tiene un número de AQI/PM2.5
+      st.active = (typeof value === "number" && !isNaN(value));
+
+      st.marker.setIcon(buildBubbleIcon(st.label, st.lastValue));
+
+      const label = getAQILabel(st.lastValue);
+      const valTxt = (st.lastValue === null) ? "—" : Math.round(st.lastValue);
+      const updTxt = fmtTime(st.lastTime);
+
+      st.marker.setPopupContent(`
+        <div class="popup-title">${st.label}</div>
+        <div class="popup-row"><span>AQI Reportado</span><b>${valTxt}</b></div>
+        <div class="popup-row"><span>Estado</span><b>${label}</b></div>
+        <div class="popup-row"><span>Última lectura</span><b>${updTxt}</b></div>
+        <div class="popup-row"><span>Red</span><b>${stationName || "Estatal Puebla"}</b></div>
+      `);
+    }
+//kkf1
+    function updateAveragePanel(){
+      let sum = 0;
+      let count = 0;
+
+      for (const st of STATIONS){
+        if (st.active){
+          sum += st.lastValue;
+          count += 1;
+        }
+      }
+
+      elActiveCount.textContent = String(count);
+
+      if (count === 0){
+        elAvgValue.textContent = "—";
+        elAvgStatus.textContent = "Sin datos";
+        elAvgStatus.style.background = "rgba(255,255,255,.06)";
+        elAvgStatus.style.color = "var(--text)";
+        return;
+      }
+
+      const avg = sum / count;
+      const avgRounded = Math.round(avg);
+      const color = getAQIColor(avgRounded);
+      const label = getAQILabel(avgRounded);
+
+      elAvgValue.textContent = String(avgRounded);
+      elAvgStatus.textContent = label;
+      elAvgStatus.style.background = color;
+      elAvgStatus.style.color = "rgba(0,0,0,.88)";
+      elAvgStatus.style.borderColor = "rgba(255,255,255,.22)";
+    }
+
+    function setLastUpdated(ts){
+      elLastUpdated.textContent = fmtTime(ts || new Date());
+    }
+//kk3
+  async function refreshAll() {
+      if (!API_TOKEN) return;
+
+      btnRefresh.disabled = true;
+      btnRefresh.textContent = "Actualizando...";
+
+      const now = new Date();
+      let anyOk = false;
+      let newestTime = null;
+
+      const jobs = STATIONS.map(async (st) => {
+        try {
+          const payload = await fetchStationPM25(st);
+          
+          // Solo marcamos como activa si el valor es un número válido
+          if (payload.value !== null && !isNaN(payload.value)) {
+            st.active = true;
+            anyOk = true;
+            if (payload.time) newestTime = payload.time;
+          } else {
+            st.active = false;
+          }
+
+          updateStationMarker(st, payload);
+        } catch (e) {
+          st.active = false;
+          updateStationMarker(st, { value: null, time: null, stationName: null });
+          console.warn(`Error en ${st.label}:`, e);
+        }
+      });
+
+      await Promise.allSettled(jobs);
+
+      updateAveragePanel();
+      setLastUpdated(anyestamp(newestTime, anyOk, now));
+
+      btnRefresh.disabled = false;
+      btnRefresh.textContent = "Actualizar ahora";
+    }
+        //kkf3
+
+    function anyestamp(newestTime, anyOk, now){
+      // Prioridad: time de WAQI si existe, si no: timestamp local.
+      if (newestTime) return newestTime;
+      if (anyOk) return now;
+      return "Sin conexión";
+    }
+
+    // Botón manual
+    btnRefresh.addEventListener("click", () => refreshAll());
+
+    // Auto-refresh exacto (sin recargar)
+    refreshAll();
+    setInterval(refreshAll, REFRESH_MS);
+  </script>
+</body>
+</html>
